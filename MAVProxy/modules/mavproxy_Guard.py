@@ -89,7 +89,6 @@ class Guard(mp_module.MPModule):
         for dog in self.watchdog_holder:
             print("MType: ",str(dog.message_type) + " Parameter: " + str(dog.field_name))
         
-            
     def cmd_add_guard(self,args):
         ''' Add Limits to Function'''
         limits = [float(args[3]),float(args[4])]      
