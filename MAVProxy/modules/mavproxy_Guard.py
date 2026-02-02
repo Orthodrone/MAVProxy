@@ -40,9 +40,14 @@ from datetime import datetime
 
 GUARD_MAX_PAST_VALUES = 10
 DEBUG_PLOT = True
+DEBUG_MODE = True
 WARNING_LEVELS = ["INFORMATION","WARNING","CRITICAL"]
 
 valuestate = {}
+
+def debug_print(str):
+    if(DEBUG_MODE):
+        print(str)
 
 def get_Gauge_from_fieldobject(field_object):
     if(field_object["lower_limit"]) == None:
@@ -108,11 +113,11 @@ def _start_dash_app():
     )
     def updateGauge(values,ids):
         #print("Updated Gauge Fieldname " + str(id["field_name"]))
-        print(values)
+        debug_print(values)
         global valuestate
         out = []
         for n,value in enumerate(values):
-            print(value["field_name"])
+            debug_print(value["field_name"])
             try:
                 out.append(valuestate[value["field_name"]])
             except KeyError:
@@ -132,7 +137,6 @@ class Guard(mp_module.MPModule):
     def __init__(self, mpstate):
         """Initialise module"""
         super(Guard, self).__init__(mpstate, "Guard", "")
-        #print("Guard loaded <3")
         self.say("Guard loaded <3")
         self.mpstate=mpstate
 
@@ -156,7 +160,7 @@ class Guard(mp_module.MPModule):
        
     def handle_cmd(self, args):
         '''handle general commands and call command functions'''
-        print(args)
+        debug_print(args)
         if len(args) == 0:
             print(self.cmd_help())
         elif args[0] == "status":
@@ -165,6 +169,9 @@ class Guard(mp_module.MPModule):
         #    self.cmd_add_guard(args)
         elif args[0] == "show":
             self.cmd_show(args)
+        elif args[0] == "show":
+            global DEBUG_MODE
+            DEBUG_MODE = True
         elif args[0] == "load":
             self.cmd_load_config(args)  
         else:
@@ -199,7 +206,7 @@ class Guard(mp_module.MPModule):
             i = 0
             for message_object in json_config["guarded_messages"]:
                 for field_object in message_object["fields"]:
-                    print(field_object)
+                    debug_print(field_object)
                     dog = WatchDog(message_type=message_object["message_type"],
                                    holderobject=self,
                                 field_name=field_object["field_name"],
@@ -209,7 +216,7 @@ class Guard(mp_module.MPModule):
                                 warning_level=field_object["warning_level"])
                     self.watchdog_holder.append(dog)
                     i = i + 1
-        print("Loaded " + str(i) + " Guard Limits for System " + json_config["System Name"])      
+        debug_print("Loaded " + str(i) + " Guard Limits for System " + json_config["System Name"])      
     
     def cmd_show(self,args):
         '''Placeholder'''
@@ -247,7 +254,7 @@ class WatchDog():
 
     def update(self,msg):
         """Updates the Watchdog with mavlink Packet"""
-        #print("Updated Dog with Message Type: %s " % msg.get_type() )
+        #debug_print("Updated Dog with Message Type: %s " % msg.get_type() )
 
         msg_dict = msg.to_dict()
         current_value = msg_dict[self.field_name]
@@ -255,7 +262,7 @@ class WatchDog():
         
         global valuestate
         valuestate[self.field_name]  = current_value
-        #print(valuestate)
+        #debug_print(valuestate)
         
         if(self.is_outof_limits(current_value)):
             self.raisealarm()
@@ -288,8 +295,9 @@ class WatchDog():
 
     def update_average(self,value):
         if (value == None):
-            print(self.field_name)
-            raise ValueError
+            self.holderobject.say(("Value of field " + str(self.field_name) + " is None"))
+            return False
+        
         self.past_values.append(value)
         if(len(self.past_values) > GUARD_MAX_PAST_VALUES):
             self.past_values.pop(0)
