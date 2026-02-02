@@ -19,11 +19,19 @@ import time
 import json
 import pdb
 
+import random
+
+import threading
+
 from MAVProxy.modules.lib import mp_module
 from MAVProxy.modules.lib import mp_util
 from MAVProxy.modules.lib import mp_settings
 from MAVProxy.modules.lib import live_graph
 from MAVProxy.modules.lib import multiproc
+
+from dash import Dash, html, dcc, MATCH, State, ALL
+import dash_daq as daq
+from dash.dependencies import Input, Output
 
 import math
 from datetime import datetime
@@ -34,8 +42,88 @@ GUARD_MAX_PAST_VALUES = 10
 DEBUG_PLOT = True
 WARNING_LEVELS = ["INFORMATION","WARNING","CRITICAL"]
 
+valuestate = {}
+
+def get_Gauge_from_fieldobject(field_object):
+    if(field_object["lower_limit"]) == None:
+        lower_limit = field_object["field_gauge_min"]
+    else:
+        lower_limit = field_object["lower_limit"]
+        
+    if(field_object["upper_limit"]) == None:
+        upper_limit = field_object["field_gauge_max"]
+    else:
+        upper_limit = field_object["upper_limit"]
+    
+    try:
+        label = field_object["field_label"]
+    except KeyError:
+        label = field_object["field_name"]
+        
+    field_name = field_object["field_name"]
+    gauge_object = daq.Gauge(
+    id={'type': 'gauge',
+        'field_name':field_name},
+    label=label,
+    min=field_object["field_gauge_min"], max=field_object["field_gauge_max"],
+    value=0,
+    units=field_object["field_gauge_unit"],
+    showCurrentValue=True,
+    color={
+        "gradient": False,
+        "ranges": {
+            "#F20000":[field_object["field_gauge_min"],lower_limit],
+            "green": [lower_limit, upper_limit],
+            "#FF0000":[upper_limit,field_object["field_gauge_max"]]
+        },
+    })
+    return gauge_object
 
 
+def _start_dash_app():
+    """Separater Thread für den Dash Webserver."""
+    app = Dash(__name__)
+    group_divs = []
+    with open(r"C:\Users\Orthodrone\AppData\Local\.mavproxy\guard_limits.json") as f:
+        json_config = json.load(f)
+        for message_object in json_config["guarded_messages"]:
+            field_divs = []
+            for field_object in message_object["fields"]:
+                field_divs.append(get_Gauge_from_fieldobject(field_object))
+                
+            group_divs.append(
+                html.Div(children=[
+                    html.H2(message_object["message_type"]),
+                    html.Div(children=field_divs,style={"display":"flex","flex-direction":"row","align-items":"center"})
+                ],style={"align-items":"center"})
+            )
+    group_divs.append(dcc.Interval(id=("tick"), interval=500, n_intervals=0))
+    #group_divs.append(html.Button('UPDATE', id='tick'))
+    app.layout = html.Div(children=group_divs)
+    
+    @app.callback(
+        Output({'type': 'gauge', 'field_name': ALL}, 'value'),
+        State({'type': 'gauge', 'field_name': ALL}, 'id'),
+        Input('tick', 'n_intervals')    
+    )
+    def updateGauge(values,ids):
+        #print("Updated Gauge Fieldname " + str(id["field_name"]))
+        print(values)
+        global valuestate
+        out = []
+        for n,value in enumerate(values):
+            print(value["field_name"])
+            try:
+                out.append(valuestate[value["field_name"]])
+            except KeyError:
+                #out.append(valuestate[value["value"]])
+                out.append(0)
+                print("KEY Error: " +  value["field_name"])
+        return out
+
+    # WICHTIG: neue Dash Version → app.run()
+    app.run(debug=False, port=8050, host="0.0.0.0")
+    
 class Guard(mp_module.MPModule):
     """Guard Main Module
     Args:
@@ -51,7 +139,10 @@ class Guard(mp_module.MPModule):
         self.watched_mtypes = []
         self.watchdog_holder = []
         self.armed_state = False
-
+        
+        self.console.writeln("Gauge: Starte Dash Webserver auf http://localhost:8050 ...")
+        self._dash_thread = threading.Thread(target=_start_dash_app, daemon=True)
+        self._dash_thread.start()
 
         self.Guard_settings = mp_settings.MPSettings(
             [ ('verbose', bool, False),
@@ -101,7 +192,9 @@ class Guard(mp_module.MPModule):
            
     def cmd_load_config(self,args):
         ''' load limit function from config file'''
+        group_divs = []
         with open(r"C:\Users\Orthodrone\AppData\Local\.mavproxy\guard_limits.json") as f:
+            field_divs = []
             json_config = json.load(f)
             i = 0
             for message_object in json_config["guarded_messages"]:
@@ -127,8 +220,6 @@ class Guard(mp_module.MPModule):
         '''handle mavlink packets'''
         if(msg.get_type() == "HEARTBEAT"):
             self.armed_state = bool(msg.to_dict()["base_mode"] >> 7)
-            #breakpoint()
-            
             
         for dog in self.watchdog_holder:
             if(dog.message_type == msg.get_type()):
@@ -153,44 +244,18 @@ class WatchDog():
         
         self.past_values = []
         self.average = None
-        
-
-        graphfields = [self.field_name]
-        if(self.mov_average_percent != None):
-            graphfields.append("Average")
-            graphfields.append("Lower Boundry")
-            graphfields.append("Upper Boundry")
-
-        if(self.lower_limit != None):
-            graphfields.append("lower Limit")
-        if(self.upper_limit != None):
-            graphfields.append("upper Limit")
-            
-            
-        self.livegraph = live_graph.LiveGraph(graphfields,title=self.field_name)
 
     def update(self,msg):
         """Updates the Watchdog with mavlink Packet"""
         #print("Updated Dog with Message Type: %s " % msg.get_type() )
+
         msg_dict = msg.to_dict()
         current_value = msg_dict[self.field_name]
         
         
-        graph_values = [current_value]
-        if (self.mov_average_percent != None):
-            self.update_average(current_value)
-            
-            graph_values.append(self.average)
-            graph_values.append(self.lower_limit_avg)
-            graph_values.append(self.upper_limit_avg)
-
-        
-        if(self.lower_limit != None):
-            graph_values.append(self.lower_limit)
-        if(self.upper_limit != None):
-            graph_values.append(self.upper_limit)
-            
-        self.livegraph.add_values(graph_values)
+        global valuestate
+        valuestate[self.field_name]  = current_value
+        #print(valuestate)
         
         if(self.is_outof_limits(current_value)):
             self.raisealarm()
@@ -212,6 +277,7 @@ class WatchDog():
                 return True
             
         if (self.mov_average_percent != None):
+            self.update_average(value)
             if( value > self.upper_limit_avg or value < self.lower_limit_avg):
                 return True
             
@@ -221,6 +287,9 @@ class WatchDog():
         self.holderobject.say(str(WARNING_LEVELS[self.warning_level] + ": " + str(self.field_name) + " out of set Boundary"))
 
     def update_average(self,value):
+        if (value == None):
+            print(self.field_name)
+            raise ValueError
         self.past_values.append(value)
         if(len(self.past_values) > GUARD_MAX_PAST_VALUES):
             self.past_values.pop(0)
