@@ -169,9 +169,10 @@ class Guard(mp_module.MPModule):
         #    self.cmd_add_guard(args)
         elif args[0] == "show":
             self.cmd_show(args)
-        elif args[0] == "show":
+        elif args[0] == "ToggleDebug":
             global DEBUG_MODE
-            DEBUG_MODE = True
+            DEBUG_MODE = not DEBUG_MODE
+            print("Debug Mode:" + str(DEBUG_MODE))
         elif args[0] == "load":
             self.cmd_load_config(args)  
         else:
