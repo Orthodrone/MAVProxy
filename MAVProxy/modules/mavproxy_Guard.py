@@ -42,6 +42,7 @@ GUARD_MAX_PAST_VALUES = 10
 DEBUG_PLOT = True
 DEBUG_MODE = True
 WARNING_LEVELS = ["INFORMATION","WARNING","CRITICAL"]
+config_JSON = None
 
 valuestate = {}
 
@@ -89,19 +90,18 @@ def _start_dash_app():
     """Separater Thread für den Dash Webserver."""
     app = Dash(__name__)
     group_divs = []
-    with open(r"C:\Users\Orthodrone\AppData\Local\.mavproxy\guard_limits.json") as f:
-        json_config = json.load(f)
-        for message_object in json_config["guarded_messages"]:
-            field_divs = []
-            for field_object in message_object["fields"]:
-                field_divs.append(get_Gauge_from_fieldobject(field_object))
-                
-            group_divs.append(
-                html.Div(children=[
-                    html.H2(message_object["message_type"]),
-                    html.Div(children=field_divs,style={"display":"flex","flex-direction":"row","align-items":"center"})
-                ],style={"align-items":"center"})
-            )
+    global config_JSON
+    for message_object in config_JSON["guarded_messages"]:
+        field_divs = []
+        for field_object in message_object["fields"]:
+            field_divs.append(get_Gauge_from_fieldobject(field_object))
+            
+        group_divs.append(
+            html.Div(children=[
+                html.H2(message_object["message_type"]),
+                html.Div(children=field_divs,style={"display":"flex","flex-direction":"row","align-items":"center"})
+            ],style={"align-items":"center"})
+        )
     group_divs.append(dcc.Interval(id=("tick"), interval=500, n_intervals=0))
     #group_divs.append(html.Button('UPDATE', id='tick'))
     app.layout = html.Div(children=group_divs)
@@ -109,7 +109,7 @@ def _start_dash_app():
     @app.callback(
         Output({'type': 'gauge', 'field_name': ALL}, 'value'),
         State({'type': 'gauge', 'field_name': ALL}, 'id'),
-        Input('tick', 'n_intervals')    
+        Input('tick', 'n_intervals')        
     )
     def updateGauge(values,ids):
         #print("Updated Gauge Fieldname " + str(id["field_name"]))
@@ -143,10 +143,6 @@ class Guard(mp_module.MPModule):
         self.watched_mtypes = []
         self.watchdog_holder = []
         self.armed_state = False
-        
-        self.console.writeln("Gauge: Starte Dash Webserver auf http://localhost:8050 ...")
-        self._dash_thread = threading.Thread(target=_start_dash_app, daemon=True)
-        self._dash_thread.start()
 
         self.Guard_settings = mp_settings.MPSettings(
             [ ('verbose', bool, False),
@@ -201,11 +197,13 @@ class Guard(mp_module.MPModule):
     def cmd_load_config(self,args):
         ''' load limit function from config file'''
         group_divs = []
-        with open(r"C:\Users\Orthodrone\AppData\Local\.mavproxy\guard_limits.json") as f:
+        
+        with open(args[1]) as f:
             field_divs = []
-            json_config = json.load(f)
+            global config_JSON
+            config_JSON = json.load(f)
             i = 0
-            for message_object in json_config["guarded_messages"]:
+            for message_object in config_JSON["guarded_messages"]:
                 for field_object in message_object["fields"]:
                     debug_print(field_object)
                     dog = WatchDog(message_type=message_object["message_type"],
@@ -217,10 +215,17 @@ class Guard(mp_module.MPModule):
                                 warning_level=field_object["warning_level"])
                     self.watchdog_holder.append(dog)
                     i = i + 1
-        debug_print("Loaded " + str(i) + " Guard Limits for System " + json_config["System Name"])      
+        debug_print("Loaded " + str(i) + " Guard Limits for System " + config_JSON["System Name"])      
     
     def cmd_show(self,args):
-        '''Placeholder'''
+        '''Starts the Visualisation'''
+        if (config_JSON != None):
+            self.console.writeln("Gauge: Starte Dash Webserver auf http://localhost:8050 ...")
+            self._dash_thread = threading.Thread(target=_start_dash_app, daemon=True)
+            self._dash_thread.start()
+        else:
+            self.say("ERROR: Load a Vehicle Config before starting the Visualisation")
+            print("ERROR: Load a Vehicle Config before starting the Visualisation")
         return
  
         
