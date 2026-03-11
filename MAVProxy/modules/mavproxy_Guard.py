@@ -42,8 +42,8 @@ GUARD_MAX_PAST_VALUES = 10
 DEBUG_PLOT = True
 DEBUG_MODE = True
 WARNING_LEVELS = ["INFORMATION","WARNING","CRITICAL"]
-config_JSON = None
 
+config_JSON = None
 valuestate = {}
 
 def debug_print(str):
@@ -161,8 +161,6 @@ class Guard(mp_module.MPModule):
             print(self.cmd_help())
         elif args[0] == "status":
             self.cmd_status()
-        #elif args[0] == "add":         #deactivated
-        #    self.cmd_add_guard(args)
         elif args[0] == "show":
             self.cmd_show(args)
         elif args[0] == "ToggleDebug":
