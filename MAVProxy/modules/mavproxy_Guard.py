@@ -50,7 +50,13 @@ def debug_print(str):
     if(DEBUG_MODE):
         print(str)
 
-def get_Gauge_from_fieldobject(field_object):
+def get_compound_index(message_type,fieldname):
+    return ".".join([message_type,fieldname])
+
+def split_compound_index(index):
+    return index.split(".")
+
+def get_Gauge_from_fieldobject(message_type,field_object):
     if(field_object["lower_limit"]) == None:
         lower_limit = field_object["field_gauge_min"]
     else:
@@ -66,10 +72,10 @@ def get_Gauge_from_fieldobject(field_object):
     except KeyError:
         label = field_object["field_name"]
         
-    field_name = field_object["field_name"]
+    field_id = get_compound_index(message_type=message_type,fieldname=field_object["field_name"])
     gauge_object = daq.Gauge(
     id={'type': 'gauge',
-        'field_name':field_name},
+        'field_id':field_id},
     label=label,
     min=field_object["field_gauge_min"], max=field_object["field_gauge_max"],
     value=0,
@@ -101,15 +107,15 @@ def _start_dash_app():
         )
         
         for field_object in message_object["fields"]:
-            field_divs.append(get_Gauge_from_fieldobject(field_object))
+            field_divs.append(get_Gauge_from_fieldobject(message_object["message_type"],field_object))
             
     group_divs.append(dcc.Interval(id=("tick"), interval=500, n_intervals=0))
     #group_divs.append(html.Button('UPDATE', id='tick'))
     app.layout = html.Div(children=group_divs)
     
     @app.callback(
-        Output({'type': 'gauge', 'field_name': ALL}, 'value'),
-        State({'type': 'gauge', 'field_name': ALL}, 'id'),
+        Output({'type': 'gauge', 'field_id': ALL}, 'value'),
+        State({'type': 'gauge', 'field_id': ALL}, 'id'),
         Input('tick', 'n_intervals')        
     )
     def updateGauge(values,ids):
@@ -118,15 +124,14 @@ def _start_dash_app():
         global valuestate
         out = []
         for n,value in enumerate(values):
-            debug_print(value["field_name"])
+            debug_print(value["field_id"])
             try:
-                out.append(valuestate[value["field_name"]])
+                out.append(valuestate[value["field_id"]])
             except KeyError:
-                #out.append(valuestate[value["value"]])
                 out.append(0)
-                print("KEY Error: " +  value["field_name"])
+                print("KEY Error: " +  value["field_id"])
         return out
-
+    
     # WICHTIG: neue Dash Version → app.run()
     app.run(debug=False, port=8050, host="0.0.0.0")
     
@@ -266,7 +271,7 @@ class WatchDog():
         
         
         global valuestate
-        valuestate[self.field_name]  = current_value
+        valuestate[get_compound_index(self.message_type,self.field_name)]  = current_value
         #debug_print(valuestate)
         
         if(self.is_outof_limits(current_value)):
