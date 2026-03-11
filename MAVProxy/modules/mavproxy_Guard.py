@@ -137,8 +137,8 @@ def _start_dash_app():
     
 class Guard(mp_module.MPModule):
     """Guard Main Module
-    Args:
-        mp_module (_type_): _description_
+    Args:v
+        mp_module (_type_): _description_v
     """
     def __init__(self, mpstate):
         """Initialise module"""
@@ -158,8 +158,32 @@ class Guard(mp_module.MPModule):
             'add (VALUE) (Limit1) (Limit2)'
             ])
         
+    def create_WatchDogObject(self,message_object,object_type,field_object=None):
+        debug_print(field_object)
         
-       
+        if(object_type == "value"):
+            self.watchdog_holder.append(
+                Value_WatchDog(
+                    message_type=message_object["message_type"],
+                    holderobject=self,
+                    field_name=field_object["field_name"],
+                    lower_limit=field_object["lower_limit"],
+                    upper_limit=field_object["upper_limit"],
+                    mov_average_percent=field_object["mov_average_percent"],
+                    warning_level=field_object["warning_level"]
+                )
+            )
+            
+        if(object_type == "status"):
+            self.watchdog_holder.append(
+                Status_WatchDog(
+                    holderobject=self,
+                    message_type=message_object["message_type"],
+                    field_name=message_object["status_field_name"],
+                    status_table = message_object["status_field_values"]
+                    )
+            )
+
     def handle_cmd(self, args):
         '''handle general commands and call command functions'''
         debug_print(args)
@@ -188,15 +212,18 @@ class Guard(mp_module.MPModule):
         for dog in self.watchdog_holder:
             print("MType: ",str(dog.message_type) + " Parameter: " + str(dog.field_name))
         
-    def cmd_add_guard(self,args):
-        ''' Add Limits to Function'''
-        limits = [float(args[3]),float(args[4])]      
-        dog = WatchDog(message_type=args[1],
-                       field_name=args[2],
-                       lower_limit=min(limits),
-                       upper_limit=max(limits),
-                       mov_average_percent=args[5])
-        self.watchdog_holder.append(dog)     
+    #def cmd_add_guard(self,args):
+    #    ''' Add Limits to Function'''
+    #    limits = [float(args[3]),float(args[4])]
+    #    self.watchdog_holder.append(
+    #        Value_WatchDog(
+    #            message_type=args[1],
+    #            field_name=args[2],
+    #            lower_limit=min(limits),
+    #            upper_limit=max(limits),
+    #            mov_average_percent=args[5]
+    #        )
+    #    )     
            
     def cmd_load_config(self,args):
         ''' load limit function from config file'''
@@ -207,17 +234,18 @@ class Guard(mp_module.MPModule):
             global vehicle_config
             vehicle_config = json.load(f)
             i = 0
+
             for message_object in vehicle_config["guarded_messages"]:
+                # Try Creation of Status Object  if defined
+                try:
+                    self.create_WatchDogObject(message_object=message_object,object_type="status")
+                    print("Added Status Watchdog")
+                except KeyError:
+                    pass                    
+                
+                # Create Value Watchdogs
                 for field_object in message_object["fields"]:
-                    debug_print(field_object)
-                    dog = WatchDog(message_type=message_object["message_type"],
-                                   holderobject=self,
-                                field_name=field_object["field_name"],
-                                lower_limit=field_object["lower_limit"],
-                                upper_limit=field_object["upper_limit"],
-                                mov_average_percent=field_object["mov_average_percent"],
-                                warning_level=field_object["warning_level"])
-                    self.watchdog_holder.append(dog)
+                    self.create_WatchDogObject(message_object=message_object,field_object=field_object,object_type="value")
                     i = i + 1
         debug_print("Loaded " + str(i) + " Guard Limits for System " + vehicle_config["System Name"])      
     
@@ -243,7 +271,37 @@ class Guard(mp_module.MPModule):
                 dog.update(msg)
                     
                     
-class WatchDog():
+                    
+class Status_WatchDog():
+    def __init__(self,holderobject,message_type,field_name,status_table):
+        self.holderobject = holderobject
+        self.message_type = message_type
+        self.fieldname = field_name
+        self.status_table = status_table
+        self.compound_index = get_compound_index(self.message_type,self.fieldname)
+        
+    def update(self,msg):
+        msg_dict = msg.to_dict()
+        global valuestate
+        valuestate[self.compound_index] = [] # clear the current status
+        #pdb.set_trace()
+        print("Status Update Called")
+
+        statuscode = msg_dict[self.fieldname]
+        for i,bit in enumerate(reversed(bin(statuscode)[2:])):
+            if(int(bit) == 1):
+                status_config = self.status_table[i]
+                print(status_config)
+                #breakpoint()
+                self.notify(status_config=status_config)
+                valuestate[self.compound_index].append(status_config)
+                
+    def notify(self,status_config):
+        #if(status_config[3] >= 1):
+        self.holderobject.say(str(WARNING_LEVELS[status_config[3]] + ": " + str(status_config[1])))
+        print(str(WARNING_LEVELS[status_config[3]] + ": " + str(status_config[1])))
+            
+class Value_WatchDog():
     def __init__(self,holderobject,message_type,field_name,lower_limit=None,upper_limit=None,mov_average_percent=None,warning_level="INFORMATION"):
         """Initialises the Watchdog Object
 
