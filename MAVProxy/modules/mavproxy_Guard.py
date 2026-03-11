@@ -93,15 +93,16 @@ def _start_dash_app():
     global config_JSON
     for message_object in config_JSON["guarded_messages"]:
         field_divs = []
-        for field_object in message_object["fields"]:
-            field_divs.append(get_Gauge_from_fieldobject(field_object))
-            
         group_divs.append(
             html.Div(children=[
                 html.H2(message_object["message_type"]),
-                html.Div(children=field_divs,style={"display":"flex","flex-direction":"row","align-items":"center"})
+                html.Div(children=field_divs,style={"display":"flex","flex-direction":"row","align-items":"center"}),
             ],style={"align-items":"center"})
         )
+        
+        for field_object in message_object["fields"]:
+            field_divs.append(get_Gauge_from_fieldobject(field_object))
+            
     group_divs.append(dcc.Interval(id=("tick"), interval=500, n_intervals=0))
     #group_divs.append(html.Button('UPDATE', id='tick'))
     app.layout = html.Div(children=group_divs)
