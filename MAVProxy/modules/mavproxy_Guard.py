@@ -43,7 +43,7 @@ DEBUG_PLOT = True
 DEBUG_MODE = True
 WARNING_LEVELS = ["INFORMATION","WARNING","CRITICAL"]
 
-config_JSON = None
+vehicle_config = None
 valuestate = {}
 
 def debug_print(str):
@@ -90,8 +90,8 @@ def _start_dash_app():
     """Separater Thread für den Dash Webserver."""
     app = Dash(__name__)
     group_divs = []
-    global config_JSON
-    for message_object in config_JSON["guarded_messages"]:
+    global vehicle_config
+    for message_object in vehicle_config["guarded_messages"]:
         field_divs = []
         group_divs.append(
             html.Div(children=[
@@ -199,10 +199,10 @@ class Guard(mp_module.MPModule):
         
         with open(args[1]) as f:
             field_divs = []
-            global config_JSON
-            config_JSON = json.load(f)
+            global vehicle_config
+            vehicle_config = json.load(f)
             i = 0
-            for message_object in config_JSON["guarded_messages"]:
+            for message_object in vehicle_config["guarded_messages"]:
                 for field_object in message_object["fields"]:
                     debug_print(field_object)
                     dog = WatchDog(message_type=message_object["message_type"],
@@ -214,11 +214,11 @@ class Guard(mp_module.MPModule):
                                 warning_level=field_object["warning_level"])
                     self.watchdog_holder.append(dog)
                     i = i + 1
-        debug_print("Loaded " + str(i) + " Guard Limits for System " + config_JSON["System Name"])      
+        debug_print("Loaded " + str(i) + " Guard Limits for System " + vehicle_config["System Name"])      
     
     def cmd_show(self,args):
         '''Starts the Visualisation'''
-        if (config_JSON != None):
+        if (vehicle_config != None):
             self.console.writeln("Gauge: Starte Dash Webserver auf http://localhost:8050 ...")
             self._dash_thread = threading.Thread(target=_start_dash_app, daemon=True)
             self._dash_thread.start()
